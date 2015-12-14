@@ -6,7 +6,7 @@ The purpose of this project is to create a website that generates fun statistics
 
 ## Possible features
 
-- [ ] Power Rankings
+- [X] Power Rankings
 
 - [ ] Playoff Chance Percentage
 
