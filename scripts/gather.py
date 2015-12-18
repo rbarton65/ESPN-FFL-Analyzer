@@ -21,16 +21,16 @@ schedule = {}
 
 class TeamID:
         def __init__(self, name, owner, ID, pf, pa, year, division):
-                self.name = name
-		self.owner = owner
-                self.ID = ID
-		self.pf = pf
-		self.pa = pa
-		self.year = year
-		self.division = division
-		self.wins = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-		self.mov = []
-		self.scores = []
+			self.name = name
+			self.owner = owner
+			self.ID = ID
+			self.pf = pf
+			self.pa = pa
+			self.year = year
+			self.division = division
+			self.wins = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] #up to 32 different IDs incase new members replace old ones
+			self.mov = []
+			self.scores = []
 
 def history():
 	"""Finds the years for the league"""
@@ -39,7 +39,8 @@ def history():
         ourUrl = opener.open(url).read()
         soup = BeautifulSoup(ourUrl)
         for year in soup.findAll('option'):
-		years.append(year.text)
+			years.append(year.text)
+			schedule[year.text] = {}
 	return years
 
 def gather_teams(years):
@@ -77,56 +78,62 @@ def gather_settings(settings):
 		for i in soup.findAll('td', {'class' : 'settingLabel'}):
 			if setting == i.text:
 				settings[setting] = i.findNext('td').text
-	settings["Playoff Teams"] = settings["Playoff Teams"].split()[0]
-	settings["Regular Season Matchups"] = settings["Regular Season Matchups"].split()[0]
+	settings["Playoff Teams"] = int(settings["Playoff Teams"].split()[0])
+	settings["Regular Season Matchups"] = int(settings["Regular Season Matchups"].split()[0])
+	settings["Number of Teams"] = int(settings["Number of Teams"])
 	return settings
 
 def gather_matchups(week, years):
 	"""Gathers matchups, wins, scores for each team"""
 	for year in years:
 		url = "http://games.espn.go.com/ffl/scoreboard?leagueId=288077&matchupPeriodId=%s&seasonId=%s" % (week, year)
-        	ourUrl = opener.open(url).read()
-	        soup = BeautifulSoup(ourUrl)
-        	for i in soup.findAll('table', {'class' : 'ptsBased matchup'}):
-                	for team in teams:
+		ourUrl = opener.open(url).read()
+		soup = BeautifulSoup(ourUrl)
+		schedule[year][week] = []
+		for i in soup.findAll('table', {'class' : 'ptsBased matchup'}):
+			parsed1 = urlparse.urlparse(i.findAll('a')[1]['href'])
+			id1 = urlparse.parse_qs(parsed1.query)['teamId'][0]
+			parsed2 = urlparse.urlparse(i.findAll('a')[0]['href'])
+			id2 = urlparse.parse_qs(parsed2.query)['teamId'][0]
+			schedule[year][week].append([id1, id2])
+			for team in teams:
 				if team.year == year:
-	                        	matchup = i.findAll('a') #info for opponents in list
-	        	                scores = i.findAll('td', {'class' : 'score'}) #scores for opponents in list
+					matchup = i.findAll('a') #info for opponents in list
+					scores = i.findAll('td', {'class' : 'score'}) #scores for opponents in list					
 					try:
 						score0 = float(scores[0].get('title'))
 						score1 = float(scores[1].get('title'))
 					except:
 						score0 = float(scores[0].text)
 						score1 = float(scores[1].text)
-        	        	        mov = score0 - score1 #only interested in margin of victory
+					mov = score0 - score1 #only interested in margin of victory
 					if team.name == matchup[0].text:
-                        	        	if mov > 0: #if greater than 0, this is the winner
-                                	        	parsed = urlparse.urlparse(i.findAll('a')[1]['href']) #parse url parameters
-		                                        id = urlparse.parse_qs(parsed.query)['teamId'][0] # find opponents ID
-	        	                                team.wins[int(id)-1] += 1 # place a 1 in the opponent ID spot in wins
-                        	        	if float(scores[0].text) > 0:
-                                	        	team.scores.append(float(score0))
-		                                        team.mov.append(round(mov, 1)) # add margin of victory
-                		        if team.name == matchup[1].text:
-                                		if mov < 0:
-		                                        parsed = urlparse.urlparse(i.findAll('a')[0]['href']) #parse url parameters
-                		                        id = urlparse.parse_qs(parsed.query)['teamId'][0]
-                                		        team.wins[int(id)-1] += 1
-		                                if float(scores[1].text) > 0:
-                		                        team.scores.append(float(score1))
-                                		        team.mov.append(round(-mov, 1)) # add margin of victory
+						if mov > 0: #if greater than 0, this is the winner
+							team.wins[int(id1)-1] += 1 # place a 1 in the opponent ID spot in wins
+						if float(scores[0].text) > 0:
+							team.scores.append(float(score0))
+							team.mov.append(round(mov, 1)) # add margin of victory
+					if team.name == matchup[1].text:
+						if mov < 0:
+							team.wins[int(id2)-1] += 1
+						if float(scores[1].text) > 0:
+							team.scores.append(float(score1))
+							team.mov.append(round(-mov, 1)) # add margin of victory
 
 def main():
 	print "Gathering Teams"
 	gather_settings(settings)
 	years = history()
 	gather_teams(years)
-	for matchup in range(1,int(settings["Regular Season Matchups"])):
+	for matchup in range(1,int(settings["Regular Season Matchups"])+1):
 		gather_matchups(matchup, years)
 	teams.sort(key=operator.attrgetter('year', 'division'), reverse = False)
 	for i in settings:
 		print "%s: %s" % (i,settings[i])
 	for i in teams:
 		print ', '.join("%s: %s" % item for item in vars(i).items())
+	for i in schedule:
+		print "Season: %s" % i 
+		print schedule[i]
 if  __name__ =='__main__':main()
 
