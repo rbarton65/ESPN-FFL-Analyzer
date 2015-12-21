@@ -16,7 +16,8 @@ args = parser.parse_args()
 opener = urllib2.build_opener()
 opener.addheaders = [('User-agent', 'Mozilla/5.0')]
 teams=[]
-settings={"League Name": None, "Number of Teams": None, "Regular Season Matchups": None, "Playoff Teams": None, "Playoff Seeding Tie Breaker": None}
+template={"League Name": None, "Number of Teams": None, "Regular Season Matchups": None, "Playoff Teams": None, "Playoff Seeding Tie Breaker": None}
+settings={}
 schedule = {}
 
 class TeamID:
@@ -69,68 +70,70 @@ def gather_teams(years):
         	        	name = i.a.text
                 		teams.append(TeamID(name,owner,int(id),pf,pa,year,num+1))
 
-def gather_settings(settings):
+def gather_settings(years):
 	"""Gathers league settings"""
-	url = "http://games.espn.go.com/ffl/leaguesetup/settings?leagueId=%s" % (args.league)
-        ourUrl = opener.open(url).read()
-        soup = BeautifulSoup(ourUrl)
-	for setting in settings:
-		for i in soup.findAll('td', {'class' : 'settingLabel'}):
-			if setting == i.text:
-				settings[setting] = i.findNext('td').text
-	settings["Playoff Teams"] = int(settings["Playoff Teams"].split()[0])
-	settings["Regular Season Matchups"] = int(settings["Regular Season Matchups"].split()[0])
-	settings["Number of Teams"] = int(settings["Number of Teams"])
-	return settings
-
-def gather_matchups(week, years):
-	"""Gathers matchups, wins, scores for each team"""
 	for year in years:
-		url = "http://games.espn.go.com/ffl/scoreboard?leagueId=288077&matchupPeriodId=%s&seasonId=%s" % (week, year)
+		url = "http://games.espn.go.com/ffl/leaguesetup/settings?leagueId=%s&seasonId=%s" % (args.league, year)
 		ourUrl = opener.open(url).read()
 		soup = BeautifulSoup(ourUrl)
-		schedule[year][week] = []
-		for i in soup.findAll('table', {'class' : 'ptsBased matchup'}):
-			parsed1 = urlparse.urlparse(i.findAll('a')[1]['href'])
-			id1 = urlparse.parse_qs(parsed1.query)['teamId'][0]
-			parsed2 = urlparse.urlparse(i.findAll('a')[0]['href'])
-			id2 = urlparse.parse_qs(parsed2.query)['teamId'][0]
-			schedule[year][week].append([id1, id2])
-			for team in teams:
-				if team.year == year:
-					matchup = i.findAll('a') #info for opponents in list
-					scores = i.findAll('td', {'class' : 'score'}) #scores for opponents in list					
-					try:
-						score0 = float(scores[0].get('title'))
-						score1 = float(scores[1].get('title'))
-					except:
-						score0 = float(scores[0].text)
-						score1 = float(scores[1].text)
-					mov = score0 - score1 #only interested in margin of victory
-					if team.name == matchup[0].text:
-						if mov > 0: #if greater than 0, this is the winner
-							team.wins[int(id1)-1] += 1 # place a 1 in the opponent ID spot in wins
-						if float(scores[0].text) > 0:
-							team.scores.append(float(score0))
-							team.mov.append(round(mov, 1)) # add margin of victory
-					if team.name == matchup[1].text:
-						if mov < 0:
-							team.wins[int(id2)-1] += 1
-						if float(scores[1].text) > 0:
-							team.scores.append(float(score1))
-							team.mov.append(round(-mov, 1)) # add margin of victory
+		settings[year] = {}
+		for i in soup.findAll('td', {'class' : 'settingLabel'}):
+			for setting in template:
+				if setting == i.text:
+					settings[year][setting] = i.findNext('td').text
+		settings[year]["Playoff Teams"] = int(settings[year]["Playoff Teams"].split()[0])
+		settings[year]["Regular Season Matchups"] = int(settings[year]["Regular Season Matchups"].split()[0])
+		settings[year]["Number of Teams"] = int(settings[year]["Number of Teams"])
+
+def gather_matchups(years):
+	"""Gathers matchups, wins, scores for each team"""
+	for year in years:
+		for week in range(1, settings[year]["Regular Season Matchups"]+1):
+			url = "http://games.espn.go.com/ffl/scoreboard?leagueId=%s&matchupPeriodId=%s&seasonId=%s" % (args.league, week, year)
+			ourUrl = opener.open(url).read()
+			soup = BeautifulSoup(ourUrl)
+			schedule[year][week] = []
+			for i in soup.findAll('table', {'class' : 'ptsBased matchup'}):
+				parsed1 = urlparse.urlparse(i.findAll('a')[1]['href'])
+				id1 = urlparse.parse_qs(parsed1.query)['teamId'][0]
+				parsed2 = urlparse.urlparse(i.findAll('a')[0]['href'])
+				id2 = urlparse.parse_qs(parsed2.query)['teamId'][0]
+				schedule[year][week].append([id1, id2])
+				for team in teams:
+					if team.year == year:
+						matchup = i.findAll('a') #info for opponents in list
+						scores = i.findAll('td', {'class' : 'score'}) #scores for opponents in list					
+						try:
+							score0 = float(scores[0].get('title'))
+							score1 = float(scores[1].get('title'))
+						except:
+							score0 = float(scores[0].text)
+							score1 = float(scores[1].text)
+						mov = score0 - score1 #only interested in margin of victory
+						if team.name == matchup[0].text:
+							if mov > 0: #if greater than 0, this is the winner
+								team.wins[int(id1)-1] += 1 # place a 1 in the opponent ID spot in wins
+							if float(scores[0].text) > 0:
+								team.scores.append(float(score0))
+								team.mov.append(round(mov, 1)) # add margin of victory
+						if team.name == matchup[1].text:
+							if mov < 0:
+								team.wins[int(id2)-1] += 1
+							if float(scores[1].text) > 0:
+								team.scores.append(float(score1))
+								team.mov.append(round(-mov, 1)) # add margin of victory
 
 def main():
 	print "Gathering Teams"
-	gather_settings(settings)
 	years = history()
+	gather_settings(years)
 	gather_teams(years)
-	for matchup in range(1,int(settings["Regular Season Matchups"])+1):
-		gather_matchups(matchup, years)
+	gather_matchups(years)
 	teams.sort(key=operator.attrgetter('year', 'division'), reverse = False)
 	for i in settings:
 		print "%s: %s" % (i,settings[i])
 	for i in teams:
+		#print "%s %s: %s scores, %s mov" % (i.year, i.owner, len(i.scores), len(i.mov))
 		print ', '.join("%s: %s" % item for item in vars(i).items())
 	for i in schedule:
 		print "Season: %s" % i 
